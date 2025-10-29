@@ -17,7 +17,7 @@ import (
 //	FOR UPDATE SKIP LOCKED
 //
 // Note: This is Postgres-specific due to SKIP LOCKED.
-func SelectForUpdateSkipLocked(ctx context.Context, tx bun.Tx, dest interface{}, tableExpr, columns, whereExpr, orderExpr string, limit int, args ...interface{}) error {
+func SelectForUpdateSkipLocked(ctx context.Context, tx bun.Tx, dest any, tableExpr, columns, whereExpr, orderExpr string, limit int, args ...any) error {
 	q := tx.NewSelect().Model(dest).
 		TableExpr(tableExpr)
 	if columns != "" {

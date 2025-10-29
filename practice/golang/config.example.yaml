@@ -1,0 +1,19 @@
+# Example configuration for the Go practice module
+
+database:
+  dialect: postgres      # postgres | mysql | sqlite3
+  host: localhost
+  port: 5432
+  user: app
+  password: secret
+  dbname: appdb
+
+  max_open_conns: 10
+  max_idle_conns: 2
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 10m
+
+logging:
+  level: info            # debug | info | warn | error
+  format: json           # json | text
+  add_source: false      # include source locations in logs

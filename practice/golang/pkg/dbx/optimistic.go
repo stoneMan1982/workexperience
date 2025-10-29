@@ -15,7 +15,7 @@ import (
 //
 // Caller is responsible for passing correct table/model and where condition.
 // Returns ok=true if exactly one row was updated, ok=false if version conflict.
-func UpdateWithVersion(ctx context.Context, db bun.IDB, model interface{}, oldVersion any, setClause string, wherePK string, args ...interface{}) (bool, error) {
+func UpdateWithVersion(ctx context.Context, db bun.IDB, model any, oldVersion any, setClause string, wherePK string, args ...any) (bool, error) {
 	q := db.NewUpdate().Model(model).
 		Set(setClause).
 		Set("version = version + 1").
