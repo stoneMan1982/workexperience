@@ -25,10 +25,10 @@ import redis
 
 def parse_args():
     p = argparse.ArgumentParser(description="Migrate friend groups with per-row unique versions (MySQL + Redis)")
-    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--host", default="im-db.cluster-cn0iyusu6r8z.ap-east-1.rds.amazonaws.com")
     p.add_argument("--port", type=int, default=3306)
     p.add_argument("--user", default="root")
-    p.add_argument("--password", default="123456")
+    p.add_argument("--password", default="960110C827DB47#1#EAAB2CEC765D5ED6D8")
     p.add_argument("--db", required=True)
     p.add_argument("--charset", default="utf8mb4")
 
@@ -36,8 +36,8 @@ def parse_args():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--lock-wait-timeout", type=int, default=None)
 
-    p.add_argument("--redis-addr", default="127.0.0.1:6379")
-    p.add_argument("--redis-password", default="")
+    p.add_argument("--redis-addr", default="vqlhbm.node1.im.internal:6379")
+    p.add_argument("--redis-password", default="H8HBW3opBmZ8jNhbKjV7X8")
     p.add_argument("--redis-db", type=int, default=0)
     p.add_argument("--friend-seq-key", default="seq:friend")
     p.add_argument("--friend-group-seq-key", default="seq:friendGroup")
@@ -307,3 +307,5 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

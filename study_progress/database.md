@@ -165,3 +165,31 @@ ORDER BY
     COUNT(DISTINCT c.challenge_id) DESC,
     h.hacker_id;
 ```
+
+
+## MYSQL 8.0
+
+MySQL 8.0 默认使用 utf8mb4_0900_ai_ci 字符集，其中：
+
+- 0900 = Unicode 9.0 规范
+- ai = 口音不敏感 (accent insensitive)
+- ci = 大小写不敏感 (case insensitive)
+
+因此对大小写的敏感的字段需要单独指定字符集，对已经存在的表结构，可以仿照下面例子修改：  
+
+```sql
+
+-- 只修改 uid 和 short_no 字段为大小写敏感，其他字段保持不变
+ALTER TABLE `user` 
+MODIFY COLUMN `uid` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '';
+
+ALTER TABLE `user`
+MODIFY COLUMN `short_no` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '';
+
+-- 验证修改结果
+SELECT COLUMN_NAME, COLLATION_NAME 
+FROM information_schema.COLUMNS 
+WHERE TABLE_NAME = 'user' 
+AND COLUMN_NAME IN ('uid', 'short_no');
+
+```
