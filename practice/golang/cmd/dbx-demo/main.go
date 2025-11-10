@@ -7,79 +7,77 @@ import (
 	"log"
 	"time"
 
-	"github.com/stoneMan1982/workexperience/practice/golang/db"
-	"github.com/stoneMan1982/workexperience/practice/golang/pkg/dbx"
+	dbx "github.com/stoneMan1982/workexperience/practice/golang/pkg/dbx"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/sqlitedialect"
+	_ "modernc.org/sqlite"
 )
 
-// Demo models used only for compilation; adjust to your schema when running.
-type Inventory struct {
-	ID      int64 `bun:",pk,autoincrement"`
-	Stock   int64
-	Version int64
-}
-
-type Job struct {
-	ID     int64 `bun:",pk,autoincrement"`
-	Status string
+type kv struct {
+	Key   string `bun:",pk"`
+	Value string
 }
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
-	dbconn, err := db.OpenFromEnv()
+	// In-memory sqlite for demo
+	sqldb, err := sql.Open("sqlite", "file:memdb1?mode=memory&cache=shared")
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		log.Fatalf("open sqlite: %v", err)
 	}
-	defer dbconn.Close()
+	defer sqldb.Close()
 
-	fmt.Println("db connected")
+	db := bun.NewDB(sqldb, sqlitedialect.New())
+	defer db.Close()
 
-	// 1) Serializable transaction with retry
-	err = dbx.WithSerializableRetry(ctx, dbconn, func(ctx context.Context, tx bun.Tx) error {
-		// placeholder write
-		_, err := tx.NewRaw("SELECT 1").Exec(ctx)
-		return err
-	}, &dbx.RetryOption{MaxAttempts: 3, InitialBackoff: 50 * time.Millisecond})
-	if err != nil {
-		log.Printf("serializable tx failed: %v", err)
-	} else {
-		fmt.Println("serializable tx ok")
-	}
+	// Schema
+	_, _ = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)`)
 
-	// 2) Pessimistic lock with timeouts
-	err = dbx.WithTx(ctx, dbconn, &dbx.TxOption{Isolation: sql.LevelReadCommitted}, func(ctx context.Context, tx bun.Tx) error {
-		_ = dbx.SetLocalLockTimeout(ctx, tx, 3*time.Second)
-		_ = dbx.SetLocalStatementTimeout(ctx, tx, 5*time.Second)
-		// This select is just for demonstration; replace with your table.
-		var inv Inventory
-		// Note: if table doesn't exist, running this demo will error; it's fine for compile demo.
-		_ = tx.NewSelect().Model(&inv).Where("id = ?", 1).For("UPDATE").Scan(ctx)
+	tm := dbx.NewTxManager(db)
+	tm.MaxAttempts = 1 // no retries needed for this demo
+
+	// Register an after-commit hook (runs when outermost tx commits)
+	ctx = context.WithValue(ctx, struct{}{}, nil) // no-op; show ctx usage
+
+	err = tm.Run(ctx, dbx.Options{Isolation: sql.LevelDefault}, func(ctx context.Context, tx bun.Tx) error {
+		dbx.AfterCommit(ctx, func() { log.Printf("afterCommit: outer committed") })
+
+		// Upsert-like behavior for demo
+		if _, err := tx.ExecContext(ctx, `INSERT INTO kv(key, value) VALUES ('hello', 'world')
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return err
+		}
+
+		// Nested scope with savepoint. We'll simulate an error and roll back only the inner work.
+		_ = tm.Run(ctx, dbx.Options{RequiresNew: true, SavepointNameHint: "inner"}, func(ctx context.Context, tx bun.Tx) error {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO kv(key, value) VALUES ('temp', '42')`); err != nil {
+				return err
+			}
+			// simulate failure
+			return fmt.Errorf("simulate inner failure")
+		})
+
+		// Outer continues despite inner failure (because we ignored the error)
+		// Update another key and set a short per-tx timeout on PG (no-op on sqlite)
+		_ = dbx.SetLocalStatementTimeout(ctx, tx, 2*time.Second)
+
+		if _, err := tx.ExecContext(ctx, `INSERT INTO kv(key, value) VALUES ('foo', 'bar')
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
-		log.Printf("pessimistic section: %v", err)
-	} else {
-		fmt.Println("pessimistic section ok")
+		log.Fatalf("tx failed: %v", err)
 	}
 
-	// 3) Optimistic CAS example (compile-only)
-	{
-		var cur Inventory
-		// Normally you'd read cur first; we skip errors in demo.
-		_ = dbconn.NewSelect().Model(&cur).Where("id = ?", 1).Scan(ctx)
-		_, _ = dbx.UpdateWithVersion(ctx, dbconn, &Inventory{ID: 1}, cur.Version, "stock = stock - 1", "id = ?", 1)
+	// Verify results
+	var out []kv
+	if err := db.NewSelect().Model(&out).Order("key").Scan(ctx); err != nil {
+		log.Fatalf("query: %v", err)
 	}
-
-	// 4) SKIP LOCKED queue example (compile-only)
-	err = dbx.WithTx(ctx, dbconn, nil, func(ctx context.Context, tx bun.Tx) error {
-		var jobs []Job
-		return dbx.SelectForUpdateSkipLocked(ctx, tx, &jobs, "jobs", "id, status", "status = 'pending'", "id", 10)
-	})
-	if err != nil {
-		log.Printf("queue demo: %v", err)
-	} else {
-		fmt.Println("queue demo ok")
+	for _, r := range out {
+		log.Printf("row: key=%s value=%s", r.Key, r.Value)
 	}
 }

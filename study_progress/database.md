@@ -116,10 +116,9 @@ SET LOCAL lock_timeout = '3s';
 
 基本流程：  
 
-1. 读出记录，拿到当前version（或updated_at）  
-2. 提交时 update ...where id = ? and version=?(或时间戳)  
-3. 检查 RowsAffected：  
-
+- 读出记录，拿到当前version（或updated_at）  
+- 提交时 update ...where id = ? and version=?(或时间戳)  
+- 检查 RowsAffected：  
   - 1行->更新成功并把version+1  
   - 0行->表示冲突（有人改过），需要重读并重试或直接返回冲突错误
 
@@ -193,3 +192,66 @@ WHERE TABLE_NAME = 'user'
 AND COLUMN_NAME IN ('uid', 'short_no');
 
 ```
+
+## Indices  
+
+**Core Concepts:**  
+
+- What an index does: accelerates lookups by maintaining an ordered or hashed structure pointing to table rows.  
+- Trade-offs:  
+  - Faster reads, slower writes(INSERT/UPDATE/DELETE must maintain indices).  
+  - Extra storage and background maintenance(stats, vacuumiing/rebuilds in some engines).  
+- Pick by query shape: equality vs range vs full-text vs spatial, and whether ORDER BY can be satisfied by index order. 
+
+
+### By data structure/capability  
+
+- B-Tree/B+Tree(default in most DBs)  
+  - Best for equality(=) and range queries(>,<,BETWEEN), prefix LIKE('abc%').  
+  - Supports ORDER BY via index order and can avoid sort.  
+  - PostgreSQL: default index type. MySQL/InnoDB: all secondary indices are B+Tree.  
+
+- Hash index  
+  - Equality only: no ordering or range scans.  
+  - PostgresSQL has Hash indidces(less common; B-Tree usually preferred).  
+  - MySQL Memory engine uses hash per-table, but InnoDB secondary indices are B+Tree.  
+
+- GiST/SP-GiST(PostgreSQL)  
+  - Framework for custom access methods: geometric ranges, full text with GiST, KNN searches.
+
+- GIN(PostgreSQL)  
+  - Inverted indices for document-like data: arrays, jsonb, full-text tsvector.  
+  - Great for "contains element/key" queries; slower to update than B-tree.
+
+- Full-text index  
+  - Token-based inverted indices. MySQL: FULLTEXT; PostgreSQL: GIN/GiST on tsvector.  
+
+### By logical behavior  
+
+- Primary key vs unique index  
+  - PK implies NOT NULL + unique + clustered table organization.  
+  - Unique index enforces uniqueness; may be multi-column.  
+
+- Clustered vs non-clustered  
+  - InnoDB tables are clustered on the PK: the table's row storage is ordered by PK.  
+  - Secondary indices store the PK at the leaf, so lookup is "secondary->PK->row".  
+  - Pick a compact, stable PK to reduce secondary indices size(e.g., BIGINT Snowflake instead of UUID strings).  
+
+- Composite(multi column)indices  
+  - Leftmost prefix rule  
+  - Ordering matters: put "most selective" or most frequently filtered columns left; consider query patterns and ORDER BY.  
+
+- Covering Indices  
+  - Index that includes all columns needed by the query so the engine doesn't touch the heap/clustered table("index-only scan").  
+
+### Query pattern -> index choice  
+
+- Equality lookups: B-tree on the predicate columns(unique if possible).  
+- Equality + range:  
+  - e.g., WHERE user_id=? AND created_at BETWEEN ... ORDER BY created_at DESC  
+  - Composite(user_id, create_at DESC). PostgreSQL can specify DESC; MySQL can often still benefit.  
+
+
+
+
+## Redis  
